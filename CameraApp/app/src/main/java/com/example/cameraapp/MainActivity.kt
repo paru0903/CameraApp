@@ -123,12 +123,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupListeners() {
         btnRecord.setOnClickListener {
-            if (isSyncEnabled) {
-                // 同期モード: サーバーに録画開始を通知
-                sendSyncCommand("start_recording")
-            } else {
-                // 通常モード
-                if (recording != null) {
+                if (isSyncEnabled) {
+                } else {
+                    // 通常モード
                     stopRecording()
                 } else {
                     startRecording()
@@ -234,8 +231,6 @@ class MainActivity : AppCompatActivity() {
             put("device_id", deviceId)
             put("timestamp", System.currentTimeMillis())
         }
-        webSocket?.send(json.toString())
-        Log.d("CameraApp", "送信: $json")
     }
 
     private fun handleSyncMessage(message: String) {
