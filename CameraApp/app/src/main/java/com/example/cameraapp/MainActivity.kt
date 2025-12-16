@@ -123,11 +123,22 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupListeners() {
         btnRecord.setOnClickListener {
+            if (recording != null) {
+                // 録画中 → 停止
                 if (isSyncEnabled) {
+                    // 同期モード: サーバーに停止を通知
+                    sendSyncCommand("stop_recording")
                 } else {
                     // 通常モード
                     stopRecording()
+                }
+            } else {
+                // 停止中 → 開始
+                if (isSyncEnabled) {
+                    // 同期モード: サーバーに開始を通知
+                    sendSyncCommand("start_recording")
                 } else {
+                    // 通常モード
                     startRecording()
                 }
             }
@@ -231,27 +242,54 @@ class MainActivity : AppCompatActivity() {
             put("device_id", deviceId)
             put("timestamp", System.currentTimeMillis())
         }
+
+        val message = json.toString()
+        val sent = webSocket?.send(message) ?: false
+
+        Log.d("CameraApp", "同期コマンド送信: $message")
+        Log.d("CameraApp", "送信結果: $sent")
+
+        if (!sent) {
+            Log.e("CameraApp", "WebSocket送信失敗")
+            runOnUiThread {
+                Toast.makeText(this, "同期送信失敗", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     private fun handleSyncMessage(message: String) {
         try {
             val json = JSONObject(message)
             val command = json.getString("command")
+            val fromDevice = json.optString("device_id", "unknown")
+
+            Log.d("CameraApp", "同期メッセージ受信: command=$command, from=$fromDevice")
 
             when (command) {
                 "start_recording" -> {
+                    Log.d("CameraApp", "録画開始コマンド受信")
                     runOnUiThread {
                         if (recording == null) {
+                            Log.d("CameraApp", "録画を開始します")
                             startRecording()
+                        } else {
+                            Log.w("CameraApp", "既に録画中です")
                         }
                     }
                 }
                 "stop_recording" -> {
+                    Log.d("CameraApp", "録画停止コマンド受信")
                     runOnUiThread {
                         if (recording != null) {
+                            Log.d("CameraApp", "録画を停止します")
                             stopRecording()
+                        } else {
+                            Log.w("CameraApp", "録画していません")
                         }
                     }
+                }
+                else -> {
+                    Log.w("CameraApp", "不明なコマンド: $command")
                 }
             }
         } catch (e: Exception) {
