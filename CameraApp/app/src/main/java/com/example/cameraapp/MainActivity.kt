@@ -19,7 +19,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.*
-import okhttp3.MediaType.Companion.toMediaType
 import org.json.JSONObject
 import java.io.File
 import java.text.SimpleDateFormat
@@ -126,8 +125,10 @@ class MainActivity : AppCompatActivity() {
             if (recording != null) {
                 // 録画中 → 停止
                 if (isSyncEnabled) {
-                    // 同期モード: サーバーに停止を通知
-                    sendSyncCommand("stop_recording")
+                    // 同期モード: 全デバイスに停止コマンド送信
+                    val message = createSyncMessage("stop_recording")
+                    sendSyncCommand(message)
+                    handleSyncMessage(message)  // 自分にも適用
                 } else {
                     // 通常モード
                     stopRecording()
@@ -135,8 +136,10 @@ class MainActivity : AppCompatActivity() {
             } else {
                 // 停止中 → 開始
                 if (isSyncEnabled) {
-                    // 同期モード: サーバーに開始を通知
-                    sendSyncCommand("start_recording")
+                    // 同期モード: 全デバイスに開始コマンド送信
+                    val message = createSyncMessage("start_recording")
+                    sendSyncCommand(message)
+                    handleSyncMessage(message)  // 自分にも適用
                 } else {
                     // 通常モード
                     startRecording()
@@ -173,12 +176,17 @@ class MainActivity : AppCompatActivity() {
     private fun connectSync() {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
+                Log.d("CameraApp", "WebSocket接続試行: ws://172.21.1.123:7777/ws/$deviceId")
+
                 val client = OkHttpClient.Builder()
                     .readTimeout(0, TimeUnit.MILLISECONDS)
+                    .pingInterval(30, TimeUnit.SECONDS)
+                    .retryOnConnectionFailure(true)
                     .build()
 
                 val request = Request.Builder()
                     .url("ws://172.21.1.123:7777/ws/$deviceId")
+                    .addHeader("Origin", "http://172.21.1.123:7777")
                     .build()
 
                 webSocket = client.newWebSocket(request, object : WebSocketListener() {
@@ -195,21 +203,30 @@ class MainActivity : AppCompatActivity() {
 
                     override fun onMessage(webSocket: WebSocket, text: String) {
                         Log.d("CameraApp", "受信: $text")
-                        handleSyncMessage(text)
+                        runOnUiThread {
+                            handleSyncMessage(text)
+                        }
                     }
 
                     override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                         Log.e("CameraApp", "WebSocket接続失敗", t)
+                        Log.e("CameraApp", "Response: ${response?.code} ${response?.message}")
                         runOnUiThread {
                             isSyncEnabled = false
                             btnSync.text = "🔗 同期OFF"
                             btnSync.setBackgroundColor(getColor(android.R.color.darker_gray))
-                            Toast.makeText(this@MainActivity, "同期接続失敗", Toast.LENGTH_SHORT).show()
+
+                            val errorMsg = when {
+                                t.message?.contains("403") == true -> "サーバーが接続を拒否しました (403)"
+                                t.message?.contains("Connection refused") == true -> "サーバーに接続できません"
+                                else -> "同期接続失敗: ${t.message}"
+                            }
+                            Toast.makeText(this@MainActivity, errorMsg, Toast.LENGTH_LONG).show()
                         }
                     }
 
                     override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                        Log.d("CameraApp", "WebSocket切断")
+                        Log.d("CameraApp", "WebSocket切断: code=$code, reason=$reason")
                         runOnUiThread {
                             isSyncEnabled = false
                             btnSync.text = "🔗 同期OFF"
@@ -221,7 +238,11 @@ class MainActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Log.e("CameraApp", "同期接続エラー", e)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "同期接続エラー: ${e.message}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        this@MainActivity,
+                        "同期接続エラー: ${e.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
             }
         }
@@ -236,16 +257,17 @@ class MainActivity : AppCompatActivity() {
         tvStatus.text = "停止中"
     }
 
-    private fun sendSyncCommand(command: String) {
+    private fun createSyncMessage(command: String): String {
         val json = JSONObject().apply {
             put("command", command)
             put("device_id", deviceId)
             put("timestamp", System.currentTimeMillis())
         }
+        return json.toString()
+    }
 
-        val message = json.toString()
+    private fun sendSyncCommand(message: String) {
         val sent = webSocket?.send(message) ?: false
-
         Log.d("CameraApp", "同期コマンド送信: $message")
         Log.d("CameraApp", "送信結果: $sent")
 
@@ -263,29 +285,25 @@ class MainActivity : AppCompatActivity() {
             val command = json.getString("command")
             val fromDevice = json.optString("device_id", "unknown")
 
-            Log.d("CameraApp", "同期メッセージ受信: command=$command, from=$fromDevice")
+            Log.d("CameraApp", "同期メッセージ処理: command=$command, from=$fromDevice")
 
             when (command) {
                 "start_recording" -> {
                     Log.d("CameraApp", "録画開始コマンド受信")
-                    runOnUiThread {
-                        if (recording == null) {
-                            Log.d("CameraApp", "録画を開始します")
-                            startRecording()
-                        } else {
-                            Log.w("CameraApp", "既に録画中です")
-                        }
+                    if (recording == null) {
+                        Log.d("CameraApp", "録画を開始します")
+                        startRecording()
+                    } else {
+                        Log.w("CameraApp", "既に録画中です")
                     }
                 }
                 "stop_recording" -> {
                     Log.d("CameraApp", "録画停止コマンド受信")
-                    runOnUiThread {
-                        if (recording != null) {
-                            Log.d("CameraApp", "録画を停止します")
-                            stopRecording()
-                        } else {
-                            Log.w("CameraApp", "録画していません")
-                        }
+                    if (recording != null) {
+                        Log.d("CameraApp", "録画を停止します")
+                        stopRecording()
+                    } else {
+                        Log.w("CameraApp", "録画していません")
                     }
                 }
                 else -> {

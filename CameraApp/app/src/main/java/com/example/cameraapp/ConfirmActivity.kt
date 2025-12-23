@@ -1,5 +1,6 @@
 package com.example.cameraapp
 
+import android.content.Intent
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Bundle
@@ -21,6 +22,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.asRequestBody
 import java.io.File
+import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
 
 class ConfirmActivity : AppCompatActivity() {
@@ -160,6 +162,8 @@ class ConfirmActivity : AppCompatActivity() {
         showToast("再生中...")
     }
 
+    // ConfirmActivity.kt の uploadVideoToServer() を修正
+
     private fun uploadVideoToServer() {
         if (currentVideoPath == null) {
             showToast("動画データがありません")
@@ -224,7 +228,7 @@ class ConfirmActivity : AppCompatActivity() {
                         Log.d("ConfirmActivity", "動画ファイル削除: ${videoFile.absolutePath}")
 
                         // ★★ ダウンロード画面に遷移 ★★
-                        val intent = android.content.Intent(this@ConfirmActivity, DownloadActivity::class.java)
+                        val intent = Intent(this@ConfirmActivity, DownloadActivity::class.java)
                         intent.putExtra("DEVICE_ID", deviceId)
                         intent.putExtra("TIMESTAMP", captureTimestamp)
                         startActivity(intent)
