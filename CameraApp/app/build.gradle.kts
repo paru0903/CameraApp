@@ -76,6 +76,5 @@ dependencies {
 
     // ---- OkHttp（WebSocket 対応）----
     implementation("com.squareup.okhttp3:okhttp:4.12.0") // ★ 4.12.0 に統一
-
 // （ネストされた dependencies {} は削除済み）
 }

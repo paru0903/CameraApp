@@ -222,6 +222,12 @@ class ConfirmActivity : AppCompatActivity() {
                         showToast("送信成功！[$deviceId]")
                         videoFile.delete()
                         Log.d("ConfirmActivity", "動画ファイル削除: ${videoFile.absolutePath}")
+
+                        // ★★ ダウンロード画面に遷移 ★★
+                        val intent = android.content.Intent(this@ConfirmActivity, DownloadActivity::class.java)
+                        intent.putExtra("DEVICE_ID", deviceId)
+                        intent.putExtra("TIMESTAMP", captureTimestamp)
+                        startActivity(intent)
                         finish()
                     } else {
                         showToast("送信失敗: ${response.code}")
